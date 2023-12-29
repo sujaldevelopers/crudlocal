@@ -1,7 +1,9 @@
+
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 void main() {
@@ -12,11 +14,13 @@ class User {
   String name;
   String mobile;
   String dropdown;
+  String imagePath;
 
   User({
     required this.name,
     required this.mobile,
     required this.dropdown,
+    required this.imagePath,
   });
 
   Map<String, dynamic> toMap() {
@@ -24,6 +28,7 @@ class User {
       'name': name,
       'mobile': mobile,
       'dropdown': dropdown,
+      'imagePath': imagePath,
     };
   }
 
@@ -32,6 +37,7 @@ class User {
       name: map['name'],
       mobile: map['mobile'],
       dropdown: map['dropdown'],
+      imagePath: map['imagePath'],
     );
   }
 }
@@ -58,15 +64,28 @@ class _InputDataPageState extends State<InputDataPage> {
   TextEditingController _nameController = TextEditingController();
   TextEditingController _mobileController = TextEditingController();
   String? _selectedItem;
+  String? _imagePath;
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   List<User> userList = [];
+
+  Future<void> _getImage() async {
+    final imagePicker = ImagePicker();
+    final pickedFile = await imagePicker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _imagePath = pickedFile.path;
+      });
+    }
+  }
 
   void _saveData() async {
     User user = User(
       name: _nameController.text,
       mobile: _mobileController.text,
       dropdown: _selectedItem!,
+      imagePath: _imagePath ?? '',
     );
 
     setState(() {
@@ -75,9 +94,9 @@ class _InputDataPageState extends State<InputDataPage> {
 
     _nameController.clear();
     _mobileController.clear();
-    // _selectedItem = null;
+    _selectedItem;
+    _imagePath;
 
-    // Save user list to file
     await _saveDataToFile();
   }
 
@@ -99,60 +118,72 @@ class _InputDataPageState extends State<InputDataPage> {
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: InputDecoration(labelText: 'Name'),
-                validator: (name) {
-                  if (name == null) {
-                    return 'Please enter a name';
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _mobileController,
-                decoration: InputDecoration(labelText: 'Mobile Number'),
-                validator: (mobile) {
-                  if (mobile == null) {
-                    return 'Please enter a mobile number';
-                  }
-                  return null;
-                },
-              ),
-              DropdownButtonFormField<String>(
-                value: _selectedItem,
-                onChanged: (value) {
-                  setState(() {
-                    _selectedItem = value!;
-                  });
-                },
-                items: ['Option 1', 'Option 2', 'Option 3']
-                    .map((item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(item),
-                        ))
-                    .toList(),
-                decoration: InputDecoration(labelText: 'Dropdown'),
-              ),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    _saveData();
-                  }
-                },
-                child: Text('Save'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushReplacementNamed(context, '/list');
-                },
-                child: Text('Go to List Page'),
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  decoration: InputDecoration(labelText: 'Name'),
+                  validator: (value) {
+                    if (value==null) {
+                      return 'Please enter a name';
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _mobileController,
+                  decoration: InputDecoration(labelText: 'Mobile Number'),
+                  validator: (value) {
+                    if (value==null) {
+                      return 'Please enter a mobile number';
+                    }
+                    return null;
+                  },
+                ),
+                DropdownButtonFormField<String>(
+                  value: _selectedItem,
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedItem = value!;
+                    });
+                  },
+                  items: ['Option 1', 'Option 2', 'Option 3']
+                      .map((item) => DropdownMenuItem(
+                    value: item,
+                    child: Text(item),
+                  ))
+                      .toList(),
+                  decoration: InputDecoration(labelText: 'Dropdown'),
+                ),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    _getImage(); // Add image picker
+                  },
+                  child: Text('Select Image'),
+                ),
+                _imagePath != null
+                    ? Image.file(File(_imagePath!))
+                    : Container(), // Display selected image
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      _saveData();
+                    }
+                  },
+                  child: Text('Save'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pushReplacementNamed(context, '/list');
+                  },
+                  child: Text('Go to List Page'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -199,7 +230,12 @@ class _ListDataPageState extends State<ListDataPage> {
     });
   }
 
-  void _updateData(int index, User newUser) {
+  void _updateData(int index, User newUser, String oldImagePath) async {
+    if (newUser.imagePath.isNotEmpty && oldImagePath.isNotEmpty) {
+      // If a new image is selected and an old image exists, delete the old image
+      File(oldImagePath).deleteSync();
+    }
+
     setState(() {
       userList[index] = newUser;
       _saveDataToFile();
@@ -222,113 +258,122 @@ class _ListDataPageState extends State<ListDataPage> {
       ),
       body: userList.isEmpty
           ? Center(
-              child: Text('No data available.'),
-            )
+        child: Text('No data available.'),
+        )
           : ListView.builder(
-              itemCount: userList.length,
-              itemBuilder: (context, index) {
-                User user = userList[index];
-                return ListTile(
-                  title: Text('Name: ${user.name}'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Mobile Number: ${user.mobile}'),
-                      Text('Dropdown: ${user.dropdown}'),
-                    ],
+        itemCount: userList.length,
+        itemBuilder: (context, index) {
+          User user = userList[index];
+          return ListTile(
+            title: Text('Name: ${user.name}'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mobile Number: ${user.mobile}'),
+                Text('Dropdown: ${user.dropdown}'),
+                if (user.imagePath.isNotEmpty)
+                  Image.file(
+                    File(user.imagePath),
+                    width: 100,
+                    height: 100,
                   ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.edit),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) {
-                              TextEditingController nameController =
-                                  TextEditingController(text: user.name);
-                              TextEditingController mobileController =
-                                  TextEditingController(text: user.mobile);
-                              String selectedItem = user.dropdown;
-
-                              return AlertDialog(
-                                title: Text('Update Data'),
-                                content: Column(
-                                  children: [
-                                    TextField(
-                                      controller: nameController,
-                                      decoration:
-                                          InputDecoration(labelText: 'Name'),
-                                    ),
-                                    TextField(
-                                      controller: mobileController,
-                                      decoration: InputDecoration(
-                                          labelText: 'Mobile Number'),
-                                    ),
-                                    DropdownButtonFormField<String>(
-                                      value: selectedItem,
-                                      onChanged: (value) {
-                                        selectedItem = value!;
-                                      },
-                                      items:
-                                          ['Option 1', 'Option 2', 'Option 3']
-                                              .map((item) => DropdownMenuItem(
-                                                    value: item,
-                                                    child: Text(item),
-                                                  ))
-                                              .toList(),
-                                      decoration: InputDecoration(
-                                          labelText: 'Dropdown'),
-                                    ),
-                                  ],
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: Text('Cancel'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      User newUser = User(
-                                        name: nameController.text,
-                                        mobile: mobileController.text,
-                                        dropdown: selectedItem,
-                                      );
-                                      _updateData(index, newUser);
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: Text('Update'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.delete),
-                        onPressed: () {
-                          _deleteData(index);
-                        },
-                        color: Colors.red,
-                      ),
-                    ],
-                  ),
-                );
-              },
+              ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => InputDataPage(),
-              ));
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.edit),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) {
+                        TextEditingController nameController = TextEditingController(text: user.name);
+                        TextEditingController mobileController = TextEditingController(text: user.mobile);
+                        String selectedItem = user.dropdown;
+                        String imagePath = user.imagePath;
+                        String oldImagePath = user.imagePath; // Store the old image path
+
+                        return AlertDialog(
+                          title: Text('Update Data'),
+                          content: Column(
+                            children: [
+                              TextField(
+                                controller: nameController,
+                                decoration: InputDecoration(labelText: 'Name'),
+                              ),
+                              TextField(
+                                controller: mobileController,
+                                decoration: InputDecoration(labelText: 'Mobile Number'),
+                              ),
+                              DropdownButtonFormField<String>(
+                                value: selectedItem,
+                                onChanged: (value) {
+                                  selectedItem = value!;
+                                },
+                                items: ['Option 1', 'Option 2', 'Option 3']
+                                    .map((item) => DropdownMenuItem(
+                                  value: item,
+                                  child: Text(item),
+                                ))
+                                    .toList(),
+                                decoration: InputDecoration(labelText: 'Dropdown'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+                                  if (pickedFile != null) {
+                                    imagePath = pickedFile.path;
+                                    setState(() {}); // Update the image preview
+                                  }
+                                },
+                                child: Text('Change Image'),
+                              ),
+                              if (imagePath.isNotEmpty)
+                                Image.file(
+                                  File(imagePath),
+                                  width: 100,
+                                  height: 100,
+                                ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                              },
+                              child: Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                User newUser = User(
+                                  name: nameController.text,
+                                  mobile: mobileController.text,
+                                  dropdown: selectedItem,
+                                  imagePath: imagePath,
+                                );
+                                _updateData(index, newUser, oldImagePath); // Pass old image path
+                                Navigator.of(context).pop();
+                              },
+                              child: Text('Update'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete),
+                  onPressed: () {
+                    _deleteData(index);
+                  },
+                  color: Colors.red,
+                ),
+              ],
+            ),
+          );
         },
-        child: Icon(Icons.add),
       ),
     );
   }
